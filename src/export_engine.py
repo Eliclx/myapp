@@ -214,7 +214,7 @@ def export_annotations(
             png_path,
         )
 
-        # 6. 生成 VOC XML（坐标映射到实际裁剪尺寸）
+        # 6. 生成 VOC XML
         xml_objects = [
             (b.label, lx1, ly1, lx2, ly2) for b, lx1, ly1, lx2, ly2 in local_objects
         ]

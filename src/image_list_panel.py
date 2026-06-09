@@ -33,7 +33,9 @@ def _make_thumbnail_ndarray(path: str, size: int = 64) -> np.ndarray | None:
         return None
     h, w = img.shape[:2]
     scale = size / max(h, w)
-    thumb = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    thumb = cv2.resize(
+        img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA
+    )
     return thumb
 
 
@@ -51,7 +53,9 @@ class ThumbnailThread(QThread):
     只传 ndarray（不传 QPixmap），避免跨线程 GUI 对象崩溃。
     """
 
-    thumbnail_ready = pyqtSignal(int, object)  # (index, ndarray) — 不标注类型避免 pyright 报错
+    thumbnail_ready = pyqtSignal(
+        int, object
+    )  # (index, ndarray) — 不标注类型避免 pyright 报错
     all_done = pyqtSignal()
 
     def __init__(self, image_list: list[str]):

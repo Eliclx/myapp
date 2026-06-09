@@ -624,7 +624,12 @@ class TestMainWindow:
 # 7. image_adjust.py B/C + LUT 测试
 # ═══════════════════════════════════════════════
 
-from image_adjust import compute_bc_lut, compute_minmax_lut, apply_lut, ndarray_to_pixmap
+from image_adjust import (
+    compute_bc_lut,
+    compute_minmax_lut,
+    apply_lut,
+    ndarray_to_pixmap,
+)
 
 
 class TestMinmaxLUT:
@@ -636,7 +641,7 @@ class TestMinmaxLUT:
 
     def test_narrow_range(self):
         lut = compute_minmax_lut(50, 200)
-        assert lut[50] == 0     # min → 0
+        assert lut[50] == 0  # min → 0
         assert lut[200] == 255  # max → 255
         assert lut[125] == 127  # 中间线性
 
