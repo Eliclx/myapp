@@ -126,8 +126,6 @@ class QuickSettingsBar(QWidget):
 
         layout.addStretch()
 
-    def update_display(
-        self, crop_w: int, crop_h: int, output_dir: str
-    ) -> None:
+    def update_display(self, crop_w: int, crop_h: int, output_dir: str) -> None:
         self.lbl_crop.setText(f"裁剪: {crop_w}×{crop_h}")
         self.lbl_output.setText(f"输出: {output_dir}/")

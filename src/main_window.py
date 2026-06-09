@@ -28,6 +28,12 @@ from PyQt5.QtWidgets import (
 
 from annotation import AnnotationData, BBox  # pyright: ignore[reportImplicitRelativeImport]
 from export_engine import export_annotations  # pyright: ignore[reportImplicitRelativeImport]
+from image_adjust import (
+    ImageAdjustDialog,
+    apply_bc,
+    ndarray_to_pixmap,
+    show_image_info,
+)  # pyright: ignore[reportImplicitRelativeImport]
 from image_view import ImageView  # pyright: ignore[reportImplicitRelativeImport]
 from label_panel import LabelPanel  # pyright: ignore[reportImplicitRelativeImport]
 from settings_dialog import QuickSettingsBar, SettingsDialog  # pyright: ignore[reportImplicitRelativeImport]
@@ -50,8 +56,11 @@ class MainWindow(QMainWindow):
         self._image_index: int = -1
         self._annotations_cache: dict[str, list[BBox]] = {}
 
-        # 当前图片 ndarray（用于读取像素值）
+        # 当前图片 ndarray（用于读取像素值 + B/C 调整）
         self._current_img: np.ndarray | None = None
+
+        # B/C 调整对话框
+        self._bc_dialog: ImageAdjustDialog | None = None
 
         self.setAcceptDrops(True)
 
@@ -92,6 +101,9 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addAction("💾 导出标注", self._export)
         tb.addSeparator()
+        tb.addAction("🔆 亮度/对比度", self._open_bc_dialog)
+        tb.addAction("📷 图像信息", self._show_image_info)
+        tb.addSeparator()
         tb.addAction("⚙️ 设置", self._open_settings)
         tb.addSeparator()
         tb.addAction("🗑️ 清空标注", self._clear_annotations)
@@ -106,7 +118,13 @@ class MainWindow(QMainWindow):
         self.lbl_count = QLabel("标注: 0")
         self.lbl_zoom = QLabel("缩放: 100%")
 
-        for lbl in (self.lbl_pos, self.lbl_pixel, self.lbl_img, self.lbl_count, self.lbl_zoom):
+        for lbl in (
+            self.lbl_pos,
+            self.lbl_pixel,
+            self.lbl_img,
+            self.lbl_count,
+            self.lbl_zoom,
+        ):
             lbl.setStyleSheet("padding: 0 8px;")
             self.status.addPermanentWidget(lbl)
 
@@ -115,6 +133,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+O"), self, self._open_folder)
         QShortcut(QKeySequence("Ctrl+S"), self, self._export)
         QShortcut(QKeySequence("Ctrl+,"), self, self._open_settings)
+        QShortcut(QKeySequence("Ctrl+I"), self, self._show_image_info)
+        QShortcut(QKeySequence("Ctrl+B"), self, self._open_bc_dialog)
 
     def _connect_signals(self):
         self.image_view.mouse_moved.connect(self._on_mouse_moved)
@@ -361,6 +381,35 @@ class MainWindow(QMainWindow):
 
     def _on_zoom_changed(self, pct: int):
         self.lbl_zoom.setText(f"缩放: {pct}%")
+
+    # ─── B/C 调整 ───
+
+    def _open_bc_dialog(self):
+        if not self.data.is_loaded:
+            QMessageBox.information(self, "提示", "请先打开图片")
+            return
+        if self._bc_dialog is None:
+            self._bc_dialog = ImageAdjustDialog(self)
+            self._bc_dialog._apply = self._apply_bc
+        self._bc_dialog.show()
+        self._bc_dialog.raise_()
+
+    def _apply_bc(self):
+        if self._current_img is None or self._bc_dialog is None:
+            return
+        adjusted = apply_bc(
+            self._current_img, self._bc_dialog.brightness, self._bc_dialog.contrast
+        )
+        pixmap = ndarray_to_pixmap(adjusted)
+        self.image_view.update_display_pixmap(pixmap)
+
+    # ─── 图像信息 ───
+
+    def _show_image_info(self):
+        if self._current_img is None or not self.data.is_loaded:
+            QMessageBox.information(self, "提示", "请先打开图片")
+            return
+        show_image_info(self, self._current_img, self.data.image_path)
 
     def _update_count(self):
         self.lbl_count.setText(f"标注: {len(self.data.bboxes)}")

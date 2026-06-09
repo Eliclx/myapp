@@ -157,15 +157,21 @@ class ImageView(QGraphicsView):
         self._pixmap_item = None
         self._bbox_items.clear()
 
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
+        self._original_pixmap = QPixmap(path)
+        if self._original_pixmap.isNull():
             return
-        self._pixmap_item = self._scene.addPixmap(pixmap)
-        self._scene.setSceneRect(QRectF(pixmap.rect()))
+        self._pixmap_item = self._scene.addPixmap(self._original_pixmap)
+        self._scene.setSceneRect(QRectF(self._original_pixmap.rect()))
         self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
         # 记录 fitInView 后的基准缩放
         self._base_scale = self.transform().m11()
         self.zoom_changed.emit(100)
+
+    def update_display_pixmap(self, pixmap: QPixmap) -> None:
+        """替换当前显示的 pixmap（用于 B/C 调整），保持缩放和标注不变"""
+        if self._pixmap_item is None:
+            return
+        self._pixmap_item.setPixmap(pixmap)
 
     # ─── 标注框管理 ───
 
