@@ -102,52 +102,52 @@ class HistogramWidget(QWidget):
         self.update()
 
     def paintEvent(self, event):  # noqa: N802
-            p = QPainter(self)
-            p.setRenderHint(QPainter.Antialiasing, False)
-            w, h = self.width(), self.height()
-            margin = 2
-            draw_w = w - margin * 2
-            draw_h = h - margin * 2
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, False)
+        w, h = self.width(), self.height()
+        margin = 2
+        draw_w = w - margin * 2
+        draw_h = h - margin * 2
 
-            # 背景
-            p.fillRect(0, 0, w, h, QColor("#1e1e1e"))
+        # 背景
+        p.fillRect(0, 0, w, h, QColor("#1e1e1e"))
 
-            if self._data is None or len(self._data) == 0 or draw_w < 10:
-                p.end()
-                return
-
-            max_val = self._data.max()
-            if max_val <= 0:
-                p.end()
-                return
-
-            # 绘制直方图柱子
-            bar_w = max(1, draw_w / 256)
-            pen_bar = QPen(QColor("#5588cc"))
-            p.setPen(pen_bar)
-            for i in range(256):
-                bar_h = int(self._data[i] / max_val * draw_h)
-                x = margin + int(i * draw_w / 256)
-                p.drawLine(x, margin + draw_h, x, margin + draw_h - bar_h)
-
-            # Min 竖线（黄色）
-            min_x = margin + int(self._min_val * draw_w / 256)
-            pen_min = QPen(QColor("#ffcc00"), 2)
-            p.setPen(pen_min)
-            p.drawLine(min_x, margin, min_x, margin + draw_h)
-
-            # Max 竖线（红色）
-            max_x = margin + int(self._max_val * draw_w / 256)
-            pen_max = QPen(QColor("#ff4444"), 2)
-            p.setPen(pen_max)
-            p.drawLine(max_x, margin, max_x, margin + draw_h)
-
-            # 左下角标签
-            p.setPen(QPen(QColor("#aaaaaa")))
-            p.drawText(margin + 2, margin + draw_h - 2, f"{int(self._min_val)}")
-            p.drawText(max_x - 20, margin + 12, f"{int(self._max_val)}")
-
+        if self._data is None or len(self._data) == 0 or draw_w < 10:
             p.end()
+            return
+
+        max_val = self._data.max()
+        if max_val <= 0:
+            p.end()
+            return
+
+        # 绘制直方图柱子
+        bar_w = max(1, draw_w / 256)
+        pen_bar = QPen(QColor("#5588cc"))
+        p.setPen(pen_bar)
+        for i in range(256):
+            bar_h = int(self._data[i] / max_val * draw_h)
+            x = margin + int(i * draw_w / 256)
+            p.drawLine(x, margin + draw_h, x, margin + draw_h - bar_h)
+
+        # Min 竖线（黄色）
+        min_x = margin + int(self._min_val * draw_w / 256)
+        pen_min = QPen(QColor("#ffcc00"), 2)
+        p.setPen(pen_min)
+        p.drawLine(min_x, margin, min_x, margin + draw_h)
+
+        # Max 竖线（红色）
+        max_x = margin + int(self._max_val * draw_w / 256)
+        pen_max = QPen(QColor("#ff4444"), 2)
+        p.setPen(pen_max)
+        p.drawLine(max_x, margin, max_x, margin + draw_h)
+
+        # 左下角标签
+        p.setPen(QPen(QColor("#aaaaaa")))
+        p.drawText(margin + 2, margin + draw_h - 2, f"{int(self._min_val)}")
+        p.drawText(max_x - 20, margin + 12, f"{int(self._max_val)}")
+
+        p.end()
 
 
 class ImageAdjustDialog(QWidget):

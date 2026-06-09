@@ -104,20 +104,26 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         self.addToolBar(tb)
 
-        tb.addAction("📂 打开图片", self._open_image)
-        tb.addAction("📁 打开文件夹", self._open_folder)
+        def _act(text, callback, tip=""):
+            act = tb.addAction(text, callback)
+            if tip:
+                act.setToolTip(tip)
+            return act
+
+        _act("📂 打开图片", self._open_image, "打开单张图片 (Ctrl+O)")
+        _act("📁 打开文件夹", self._open_folder, "打开文件夹浏览 (Ctrl+Shift+O)")
         tb.addSeparator()
-        tb.addAction("⬅ 上一张", self._prev_image)
-        tb.addAction("➡ 下一张", self._next_image)
+        _act("⬅ 上一张", self._prev_image, "上一张图片 (A)")
+        _act("➡ 下一张", self._next_image, "下一张图片 (D)")
         tb.addSeparator()
-        tb.addAction("💾 导出标注", self._export)
+        _act("💾 导出标注", self._export, "导出标注为 VOC 格式 (Ctrl+S)")
         tb.addSeparator()
-        tb.addAction("🔆 亮度/对比度", self._open_bc_dialog)
-        tb.addAction("📷 图像信息", self._show_image_info)
+        _act("🔆 亮度/对比度", self._open_bc_dialog, "亮度/对比度调整 (Ctrl+B)")
+        _act("📷 图像信息", self._show_image_info, "查看图像详细信息 (Ctrl+I)")
         tb.addSeparator()
-        tb.addAction("⚙️ 设置", self._open_settings)
+        _act("⚙️ 设置", self._open_settings, "程序设置 (Ctrl+,)")
         tb.addSeparator()
-        tb.addAction("🗑️ 清空标注", self._clear_annotations)
+        _act("🗑️ 清空标注", self._clear_annotations, "清空当前图片的所有标注")
 
     def _setup_statusbar(self):
         self.status = QStatusBar()
@@ -155,6 +161,7 @@ class MainWindow(QMainWindow):
         self.image_view.navigate_prev.connect(self._prev_image)
         self.image_view.navigate_next.connect(self._next_image)
         self.image_view.zoom_changed.connect(self._on_zoom_changed)
+        self.image_view.annotate_mode_changed.connect(self._on_annotate_mode)
         self.image_list_panel.image_selected.connect(self._on_list_image_selected)
         self.label_panel.label_selected.connect(self._on_label_selected)
         # 底部抖动 SpinBox 联动
@@ -400,6 +407,15 @@ class MainWindow(QMainWindow):
 
     def _on_label_selected(self, label: str):
         self.image_view.set_current_label(label)
+
+    def _on_annotate_mode(self, enabled: bool):
+        """标注模式切换：检查是否已选择类别"""
+        if enabled and not self.label_panel.current_label():
+            QMessageBox.warning(self, "提示", "请先在左侧面板选择或创建一个类别")
+            self.image_view.set_annotate_mode(False)
+        else:
+            mode = "标注模式" if enabled else "选择模式"
+            self.status.showMessage(mode, 2000)
 
     def _on_jitter_changed(self, value: int):
         self._jitter = value
