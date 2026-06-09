@@ -792,9 +792,12 @@ class TestCropLargerThanImage:
 
 class TestFilenameUniqueness:
     def test_unique_filenames(self):
-        """不同 bbox 应生成不同文件名"""
+        """不同 bbox 应生成不同文件名，且包含文件夹名"""
         with tempfile.TemporaryDirectory() as tmp:
-            img_path = str(Path(tmp) / "test.png")
+            # 创建子目录模拟真实场景
+            sub_dir = Path(tmp) / "AOI_data"
+            sub_dir.mkdir()
+            img_path = str(sub_dir / "test.png")
             fake_img = np.zeros((500, 500, 3), dtype=np.uint8)
             cv2.imwrite(img_path, fake_img)
 
@@ -814,7 +817,7 @@ class TestFilenameUniqueness:
             )
             pngs = [Path(f).name for f in files if f.endswith(".png")]
             assert len(pngs) == len(set(pngs))  # 无重复
-            # 文件名包含坐标信息
             for name in pngs:
                 assert "_cx" in name
                 assert "_cy" in name
+                assert name.startswith("AOI_data_")  # 包含文件夹名

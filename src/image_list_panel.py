@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import cv2
+import numpy as np
 from PyQt5.QtCore import QThread, Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
@@ -19,27 +20,38 @@ from PyQt5.QtWidgets import (
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
 
 
-def _make_thumbnail(path: str, size: int = 64) -> QPixmap:
-    """快速生成缩略图（跳过行数，超快）"""
-    img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)  # 1/2 尺寸读
+def _make_thumbnail_ndarray(path: str, size: int = 64) -> np.ndarray | None:
+    """
+    生成缩略图 ndarray（线程安全，不涉及任何 Qt 对象）。
+    用 IMREAD_REDUCED_COLOR_2 减半读取，避免大图吃内存。
+    """
+    img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
     if img is None:
-        # fallback: 再试正常读
-        img = cv2.imread(path, cv2.IMREAD_COLOR)
+        # fallback: 用 IMREAD_REDUCED_COLOR_4 (1/4) 再试
+        img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_4)
     if img is None:
-        return QPixmap()
+        return None
     h, w = img.shape[:2]
     scale = size / max(h, w)
     thumb = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    return thumb
+
+
+def _ndarray_to_icon_pixmap(thumb: np.ndarray) -> QPixmap:
+    """ndarray → QPixmap（仅主线程调用）"""
     rgb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-    th, tw = rgb.shape[:2]
-    qimg = QImage(rgb.tobytes(), tw, th, 3 * tw, QImage.Format_RGB888)
+    h, w = rgb.shape[:2]
+    qimg = QImage(rgb.tobytes(), w, h, 3 * w, QImage.Format_RGB888)
     return QPixmap.fromImage(qimg)
 
 
 class ThumbnailThread(QThread):
-    """后台生成缩略图"""
+    """
+    后台生成缩略图。
+    只传 ndarray（不传 QPixmap），避免跨线程 GUI 对象崩溃。
+    """
 
-    thumbnail_ready = pyqtSignal(int, QPixmap)  # (index, pixmap)
+    thumbnail_ready = pyqtSignal(int, object)  # (index, ndarray) — 不标注类型避免 pyright 报错
     all_done = pyqtSignal()
 
     def __init__(self, image_list: list[str]):
@@ -51,9 +63,9 @@ class ThumbnailThread(QThread):
         for i, path in enumerate(self._image_list):
             if self._cancelled:
                 return
-            pm = _make_thumbnail(path)
-            if not pm.isNull():
-                self.thumbnail_ready.emit(i, pm)
+            thumb = _make_thumbnail_ndarray(path)
+            if thumb is not None:
+                self.thumbnail_ready.emit(i, thumb)
         self.all_done.emit()
 
     def cancel(self):
@@ -70,6 +82,7 @@ class ImageListPanel(QWidget):
         self.setFixedWidth(220)
         self._setup_ui()
         self._thumb_thread: ThumbnailThread | None = None
+        self._block_signals = False
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -86,7 +99,7 @@ class ImageListPanel(QWidget):
         self.list_widget.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self.list_widget)
 
-        # 进度条（缩略图生成时显示）
+        # 进度条
         self.progress = QProgressBar()
         self.progress.setFixedHeight(14)
         self.progress.setTextVisible(False)
@@ -94,16 +107,15 @@ class ImageListPanel(QWidget):
         layout.addWidget(self.progress)
 
     def load_image_list(self, image_list: list[str]) -> None:
-        """设置图片列表，后台生成缩略图"""
-        # 取消上一次的缩略图生成
+        """设置图片列表，后台异步生成缩略图"""
         if self._thumb_thread and self._thumb_thread.isRunning():
             self._thumb_thread.cancel()
-            self._thumb_thread.wait(1000)
+            self._thumb_thread.wait(2000)
 
         self.list_widget.clear()
         self._block_signals = True
 
-        for i, path in enumerate(image_list):
+        for path in image_list:
             name = Path(path).name
             item = QListWidgetItem(name)
             item.setData(Qt.UserRole, path)
@@ -112,7 +124,6 @@ class ImageListPanel(QWidget):
 
         self._block_signals = False
 
-        # 后台生成缩略图
         if image_list:
             self.progress.setRange(0, len(image_list))
             self.progress.setValue(0)
@@ -129,13 +140,15 @@ class ImageListPanel(QWidget):
         self._block_signals = False
 
     def _on_row_changed(self, row: int):
-        if not getattr(self, "_block_signals", False) and row >= 0:
+        if not self._block_signals and row >= 0:
             self.image_selected.emit(row)
 
-    def _on_thumbnail_ready(self, index: int, pixmap: QPixmap):
+    def _on_thumbnail_ready(self, index: int, thumb: np.ndarray):
+        """主线程：ndarray → QPixmap → 设置图标"""
         item = self.list_widget.item(index)
         if item:
-            item.setIcon(pixmap)
+            pm = _ndarray_to_icon_pixmap(thumb)
+            item.setIcon(pm)
         self.progress.setValue(self.progress.value() + 1)
 
     def _on_all_done(self):

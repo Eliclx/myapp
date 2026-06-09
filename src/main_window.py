@@ -77,14 +77,21 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(4, 4, 4, 4)
 
-        # 上半部分：左类别面板 + 图片列表 + 右图视图
+        # 上半部分：左侧面板（图片列表 + 类别）+ 右图视图
         content_layout = QHBoxLayout()
-        self.label_panel = LabelPanel()
+
+        # 左侧垂直面板
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(2)
         self.image_list_panel = ImageListPanel()
-        self.image_list_panel.hide()  # 没打开文件夹时隐藏
+        self.label_panel = LabelPanel()
+        left_layout.addWidget(self.image_list_panel, stretch=1)
+        left_layout.addWidget(self.label_panel)
+
         self.image_view = ImageView()
-        content_layout.addWidget(self.label_panel)
-        content_layout.addWidget(self.image_list_panel)
+        content_layout.addWidget(left_panel)
         content_layout.addWidget(self.image_view, stretch=1)
         main_layout.addLayout(content_layout, stretch=1)
 
@@ -181,7 +188,6 @@ class MainWindow(QMainWindow):
             return
         self._image_index = 0
         self.image_list_panel.load_image_list(self._image_list)
-        self.image_list_panel.show()
         self._load_image(self._image_list[0])
 
     def _scan_images(self, dir_path: str) -> list[str]:

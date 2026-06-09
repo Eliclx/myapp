@@ -191,9 +191,11 @@ def export_annotations(
         if not local_objects:
             continue
 
-        # 4. 生成文件名（stem + 裁剪中心坐标 + 索引，保证唯一）
-        stem = Path(image_path).stem
-        base_name = f"{stem}_cx{cx}_cy{cy}_{i:04d}"
+        # 4. 生成文件名（文件夹名 + 文件名 + 裁剪中心坐标 + 索引，保证唯一）
+        p = Path(image_path)
+        folder_name = p.parent.name
+        stem = p.stem
+        base_name = f"{folder_name}_{stem}_cx{cx}_cy{cy}_{i:04d}"
         png_name = f"{base_name}.png"
         xml_name = f"{base_name}.xml"
 
