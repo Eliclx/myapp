@@ -118,6 +118,9 @@ class ImageView(QGraphicsView):
     bbox_created = pyqtSignal(object)  # BBox
     bbox_deleted = pyqtSignal()
     mouse_moved = pyqtSignal(int, int)  # 原图坐标
+    navigate_prev = pyqtSignal()
+    navigate_next = pyqtSignal()
+    start_annotate = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -304,19 +307,31 @@ class ImageView(QGraphicsView):
                 self._temp_rect = None
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
+        key = event.key()
+        if key == Qt.Key_Escape:
             # ESC 取消正在画的标注框
             self._cancel_drawing()
-        elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+        elif key in (Qt.Key_Delete, Qt.Key_Backspace):
             # 删除选中的标注框
             for item in self._bbox_items[:]:
                 if item.isSelected():
                     self._scene.removeItem(item)
                     self._bbox_items.remove(item)
                     self.bbox_deleted.emit()
-        elif event.key() == Qt.Key_F:
+        elif key == Qt.Key_F:
             # F 键适配视口
             if self._scene.sceneRect().width() > 0:
                 self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+        elif key == Qt.Key_A:
+            # A 上一张
+            self.navigate_prev.emit()
+        elif key == Qt.Key_D:
+            # D 下一张
+            self.navigate_next.emit()
+        elif key == Qt.Key_W:
+            # W 开始标注（切换为十字光标）
+            self.setCursor(Qt.CrossCursor)
+            self.setFocus()
+            self.start_annotate.emit()
         else:
             super().keyPressEvent(event)

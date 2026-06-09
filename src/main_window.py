@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
@@ -39,6 +41,11 @@ class MainWindow(QMainWindow):
         self._jitter: int = 50
         self._output_dir: str = "output"
 
+        # 文件夹导航
+        self._image_list: list[str] = []
+        self._image_index: int = -1
+        self._annotations_cache: dict[str, list[BBox]] = {}
+
         self.setAcceptDrops(True)
 
         self._setup_ui()
@@ -70,6 +77,11 @@ class MainWindow(QMainWindow):
         self.addToolBar(tb)
 
         tb.addAction("📂 打开图片", self._open_image)
+        tb.addAction("📁 打开文件夹", self._open_folder)
+        tb.addSeparator()
+        tb.addAction("⬅ 上一张", self._prev_image)
+        tb.addAction("➡ 下一张", self._next_image)
+        tb.addSeparator()
         tb.addAction("💾 导出标注", self._export)
         tb.addSeparator()
         tb.addAction("⚙️ 设置", self._open_settings)
@@ -94,6 +106,8 @@ class MainWindow(QMainWindow):
         self.image_view.bbox_created.connect(self._on_bbox_created)
         self.image_view.bbox_deleted.connect(self._on_bbox_deleted)
         self.image_view.label_edit_requested.connect(self._on_label_edit)
+        self.image_view.navigate_prev.connect(self._prev_image)
+        self.image_view.navigate_next.connect(self._next_image)
         self.label_panel.label_selected.connect(self._on_label_selected)
 
     # ─── 操作 ───
@@ -107,7 +121,57 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        # 单张打开时清空文件夹导航
+        self._save_current_annotations()
+        self._image_list = []
+        self._image_index = -1
         self._load_image(path)
+
+    def _open_folder(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "打开图片文件夹")
+        if not dir_path:
+            return
+        self._save_current_annotations()
+        self._image_list = self._scan_images(dir_path)
+        if not self._image_list:
+            QMessageBox.information(self, "提示", "该文件夹下没有找到图片文件")
+            return
+        self._image_index = 0
+        self._load_image(self._image_list[0])
+
+    def _scan_images(self, dir_path: str) -> list[str]:
+        """扫描文件夹下所有图片，按文件名排序"""
+        images: list[str] = []
+        for f in sorted(Path(dir_path).iterdir(), key=lambda p: p.name.lower()):
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTS:
+                images.append(str(f))
+        return images
+
+    def _prev_image(self):
+        if self._image_list and self._image_index > 0:
+            self._navigate_to(self._image_index - 1)
+
+    def _next_image(self):
+        if self._image_list and self._image_index < len(self._image_list) - 1:
+            self._navigate_to(self._image_index + 1)
+
+    def _navigate_to(self, index: int) -> None:
+        """切换到指定图片，保存当前标注 + 恢复目标标注"""
+        self._save_current_annotations()
+        self._image_index = index
+        self._load_image(self._image_list[index])
+        # 恢复缓存标注
+        path = self._image_list[index]
+        if path in self._annotations_cache:
+            for bbox in self._annotations_cache[path]:
+                self.data.add_bbox(bbox)
+            self.image_view.sync_bbox_items(self.data.bboxes)
+            self._update_count()
+
+    def _save_current_annotations(self) -> None:
+        """把当前图片的标注存入缓存"""
+        if self.data.is_loaded and self.data.bboxes:
+            self._annotations_cache[self.data.image_path] = list(self.data.bboxes)
 
     def _load_image(self, path: str) -> None:
         pixmap = QPixmap(path)
@@ -122,9 +186,15 @@ class MainWindow(QMainWindow):
         )
         self.image_view.load_image(path)
         self.image_view.set_current_label(self.label_panel.current_label())
-        self.lbl_img.setText(
-            f"图片: {Path(path).name} ({pixmap.width()}×{pixmap.height()})"
-        )
+
+        # 更新状态栏
+        name = Path(path).name
+        size_info = f"{pixmap.width()}×{pixmap.height()}"
+        if self._image_list:
+            idx_info = f"{self._image_index + 1}/{len(self._image_list)}"
+            self.lbl_img.setText(f"图片: {name} ({size_info}) [{idx_info}]")
+        else:
+            self.lbl_img.setText(f"图片: {name} ({size_info})")
         self._update_count()
 
     def _export(self):
