@@ -45,7 +45,7 @@ class BBox:
         x1, y1, x2, y2 = self.normalized()
         return (x2 - x1) * (y2 - y1)
 
-    def contains_point(self, x: int, y: int, margin: int = 5) -> bool:
+    def contains_point(self, x: int, y: int, margin: int = 2) -> bool:
         x1, y1, x2, y2 = self.normalized()
         return (x1 - margin <= x <= x2 + margin) and (y1 - margin <= y <= y2 + margin)
 

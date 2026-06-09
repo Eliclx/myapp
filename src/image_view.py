@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QPen, QPixmap
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QGraphicsItem,
     QGraphicsRectItem,
@@ -112,11 +112,11 @@ class ImageView(QGraphicsView):
         self.setScene(self._scene)
 
         # 渲染优化
-        self.setRenderHint(self.Antialiasing)
-        self.setRenderHint(self.SmoothPixmapTransform)
-        self.setViewportUpdateMode(self.FullViewportUpdate)
-        self.setDragMode(self.NoDrag)
-        self.setTransformationAnchor(self.AnchorUnderMouse)
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setRenderHint(QPainter.SmoothPixmapTransform)
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
 
         # 状态
         self._pixmap_item = None
