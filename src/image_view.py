@@ -51,11 +51,13 @@ class BBoxGraphicsItem(QGraphicsRectItem):
 
     def _update_style(self):
         color = QColor(self.view.get_label_color(self.bbox.label))
-        pen = QPen(color, 3)
+        pen = QPen(color, 3 if self.isSelected() else 2)
         pen.setCosmetic(True)  # 固定像素宽度，不随缩放变化
         self.setPen(pen)
-        self.setBrush(QBrush(color))
-        self.setOpacity(0.25 if self.isSelected() else 0.08)
+        fill = QColor(color)
+        fill.setAlpha(60 if self.isSelected() else 25)
+        self.setBrush(QBrush(fill))
+        self.setOpacity(1.0)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionHasChanged:
@@ -72,14 +74,36 @@ class BBoxGraphicsItem(QGraphicsRectItem):
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
-        # 在框上方绘制标签
+        # 在框上方绘制标签背景 + 文字
         rect = self.rect()
         label = self.bbox.label or "?"
+        color = QColor(self.view.get_label_color(self.bbox.label))
         font = painter.font()
-        font.setPixelSize(16)
+        font.setPixelSize(14)
+        font.setBold(True)
         painter.setFont(font)
-        painter.setPen(QPen(QColor(self.view.get_label_color(self.bbox.label))))
-        painter.drawText(rect.topLeft() + QPointF(2, -4), label)
+
+        fm = painter.fontMetrics()
+        text_width = fm.horizontalAdvance(label)
+        text_height = fm.height()
+        padding = 3
+        label_x = rect.left()
+        label_y = rect.top() - text_height - padding * 2
+
+        # 标签背景色块
+        bg_rect = QRectF(
+            label_x - padding,
+            label_y - padding,
+            text_width + padding * 2,
+            text_height + padding * 2,
+        )
+        bg_color = QColor(color)
+        bg_color.setAlpha(200)
+        painter.fillRect(bg_rect, bg_color)
+
+        # 标签文字（白色）
+        painter.setPen(QPen(QColor("#ffffff")))
+        painter.drawText(QPointF(label_x, label_y + text_height - fm.descent()), label)
 
     def mouseDoubleClickEvent(self, event):
         # 双击编辑标签 → 由 view 处理
@@ -207,10 +231,8 @@ class ImageView(QGraphicsView):
                 self._temp_rect = self._scene.addRect(QRectF(scene_pos, scene_pos), pen)
                 return
 
-        if event.button() == Qt.MiddleButton or (
-            event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier
-        ):
-            # 中键或 Shift+左键：拖动画布
+        if event.button() == Qt.RightButton or event.button() == Qt.MiddleButton:
+            # 右键或中键：拖动画布
             self._panning = True
             self._pan_start = event.pos()
             self.setCursor(Qt.ClosedHandCursor)
@@ -266,17 +288,26 @@ class ImageView(QGraphicsView):
                     self.bbox_created.emit(bbox)
             return
 
-        if event.button() == Qt.MiddleButton or (
-            event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier
-        ):
+        if event.button() == Qt.RightButton or event.button() == Qt.MiddleButton:
             self._panning = False
             self.setCursor(Qt.ArrowCursor)
             return
 
         super().mouseReleaseEvent(event)
 
+    def _cancel_drawing(self):
+        """取消正在画的标注框"""
+        if self._drawing:
+            self._drawing = False
+            if self._temp_rect:
+                self._scene.removeItem(self._temp_rect)
+                self._temp_rect = None
+
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+        if event.key() == Qt.Key_Escape:
+            # ESC 取消正在画的标注框
+            self._cancel_drawing()
+        elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             # 删除选中的标注框
             for item in self._bbox_items[:]:
                 if item.isSelected():
