@@ -74,21 +74,30 @@ class BBoxGraphicsItem(QGraphicsRectItem):
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
-        # 在框上方绘制标签背景 + 文字
+        # 在框上方绘制标签背景 + 文字（尺寸随缩放自适应）
         rect = self.rect()
         label = self.bbox.label or "?"
         color = QColor(self.view.get_label_color(self.bbox.label))
+
+        # 根据缩放比例动态调整字体大小
+        scale = self.view.transform().m11()
+        base_px = max(10, min(16, int(14 / max(scale, 0.1))))
         font = painter.font()
-        font.setPixelSize(14)
+        font.setPixelSize(base_px)
         font.setBold(True)
         painter.setFont(font)
 
         fm = painter.fontMetrics()
         text_width = fm.horizontalAdvance(label)
         text_height = fm.height()
-        padding = 3
-        label_x = rect.left()
+        padding = 2
+
+        # 标签位置：框上方，如果超出场景范围则放框内底部
         label_y = rect.top() - text_height - padding * 2
+        scene_top = 0 if not self.scene() else self.scene().sceneRect().top()
+        if label_y < scene_top:
+            label_y = rect.bottom() - text_height - padding
+        label_x = rect.left()
 
         # 标签背景色块
         bg_rect = QRectF(
@@ -306,8 +315,8 @@ class ImageView(QGraphicsView):
                 x1, y1 = int(self._draw_start.x()), int(self._draw_start.y())  # pyright: ignore[reportOptionalMemberAccess]
                 x2, y2 = int(scene_pos.x()), int(scene_pos.y())
 
-                # 忽略太小的框（误点击）
-                if abs(x2 - x1) > 5 and abs(y2 - y1) > 5:
+                # 忽略极小的框（纯误点击，2px 以内）
+                if abs(x2 - x1) > 2 and abs(y2 - y1) > 2:
                     bbox = BBox(
                         x1=min(x1, x2),
                         y1=min(y1, y2),

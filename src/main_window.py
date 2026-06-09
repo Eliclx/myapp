@@ -415,8 +415,10 @@ class MainWindow(QMainWindow):
             return
         if self._bc_dialog is None:
             self._bc_dialog = ImageAdjustDialog(self)
-            # 用信号连接（不是 monkey-patch）
             self._bc_dialog.changed.connect(self._apply_bc)
+        # 更新直方图数据
+        if self._current_img is not None:
+            self._bc_dialog.set_histogram(self._current_img)
         self._bc_dialog.show()
         self._bc_dialog.raise_()
 

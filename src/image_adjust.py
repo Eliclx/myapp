@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -81,6 +81,75 @@ def ndarray_to_pixmap(img: np.ndarray) -> QPixmap:
 # ═══════════════════════════════════════════════
 
 
+class HistogramWidget(QWidget):
+    """直方图显示组件（ImageJ 风格：log 缩放 + Min/Max 竖线）"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data = np.zeros(256, dtype=np.float64)
+        self._min_val = 0
+        self._max_val = 255
+
+    def set_data(self, data: np.ndarray, min_val: int, max_val: int) -> None:
+        self._data = data
+        self._min_val = min_val
+        self._max_val = max_val
+        self.update()
+
+    def set_minmax(self, min_val: int, max_val: int) -> None:
+        self._min_val = min_val
+        self._max_val = max_val
+        self.update()
+
+    def paintEvent(self, event):  # noqa: N802
+            p = QPainter(self)
+            p.setRenderHint(QPainter.Antialiasing, False)
+            w, h = self.width(), self.height()
+            margin = 2
+            draw_w = w - margin * 2
+            draw_h = h - margin * 2
+
+            # 背景
+            p.fillRect(0, 0, w, h, QColor("#1e1e1e"))
+
+            if self._data is None or len(self._data) == 0 or draw_w < 10:
+                p.end()
+                return
+
+            max_val = self._data.max()
+            if max_val <= 0:
+                p.end()
+                return
+
+            # 绘制直方图柱子
+            bar_w = max(1, draw_w / 256)
+            pen_bar = QPen(QColor("#5588cc"))
+            p.setPen(pen_bar)
+            for i in range(256):
+                bar_h = int(self._data[i] / max_val * draw_h)
+                x = margin + int(i * draw_w / 256)
+                p.drawLine(x, margin + draw_h, x, margin + draw_h - bar_h)
+
+            # Min 竖线（黄色）
+            min_x = margin + int(self._min_val * draw_w / 256)
+            pen_min = QPen(QColor("#ffcc00"), 2)
+            p.setPen(pen_min)
+            p.drawLine(min_x, margin, min_x, margin + draw_h)
+
+            # Max 竖线（红色）
+            max_x = margin + int(self._max_val * draw_w / 256)
+            pen_max = QPen(QColor("#ff4444"), 2)
+            p.setPen(pen_max)
+            p.drawLine(max_x, margin, max_x, margin + draw_h)
+
+            # 左下角标签
+            p.setPen(QPen(QColor("#aaaaaa")))
+            p.drawText(margin + 2, margin + draw_h - 2, f"{int(self._min_val)}")
+            p.drawText(max_x - 20, margin + 12, f"{int(self._max_val)}")
+
+            p.end()
+
+
 class ImageAdjustDialog(QWidget):
     """ImageJ 风格亮度/对比度 + Min/Max 调整面板"""
 
@@ -91,12 +160,16 @@ class ImageAdjustDialog(QWidget):
         super().__init__(parent)
         self.setWindowTitle("Brightness/Contrast")
         self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
-        self.setFixedSize(340, 340)
+        self.setFixedSize(360, 480)
 
         self._min_val = 0
         self._max_val = 255
         self._brightness = 0
         self._contrast = 0
+
+        # 直方图数据
+        self._hist = np.zeros(256, dtype=np.float64)
+        self._hist_log = np.zeros(256, dtype=np.float64)  # log 缩放版
 
         self._setup_ui()
 
@@ -104,62 +177,39 @@ class ImageAdjustDialog(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(300)
-        self._timer.timeout.connect(self.changed.emit)
+        self._timer.timeout.connect(self._on_timer_timeout)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
+        # 直方图
+        self._hist_widget = HistogramWidget(self)
+        self._hist_widget.setFixedHeight(100)
+        layout.addWidget(self._hist_widget)
+
         # Min
-        min_group = QGroupBox("Minimum")
-        min_layout = QHBoxLayout()
-        self.slider_min = QSlider(Qt.Horizontal)
-        self.slider_min.setRange(0, 255)
-        self.slider_min.setValue(0)
-        self.lbl_min = QLabel("0")
-        self.lbl_min.setFixedWidth(30)
-        min_layout.addWidget(self.slider_min)
-        min_layout.addWidget(self.lbl_min)
-        min_group.setLayout(min_layout)
-        layout.addWidget(min_group)
+        self.slider_min, self.lbl_min = self._make_slider_row(
+            "Minimum", 0, 255, 0, self._on_min_changed
+        )
+        layout.addWidget(self._last_group)
 
         # Max
-        max_group = QGroupBox("Maximum")
-        max_layout = QHBoxLayout()
-        self.slider_max = QSlider(Qt.Horizontal)
-        self.slider_max.setRange(0, 255)
-        self.slider_max.setValue(255)
-        self.lbl_max = QLabel("255")
-        self.lbl_max.setFixedWidth(30)
-        max_layout.addWidget(self.slider_max)
-        max_layout.addWidget(self.lbl_max)
-        max_group.setLayout(max_layout)
-        layout.addWidget(max_group)
+        self.slider_max, self.lbl_max = self._make_slider_row(
+            "Maximum", 0, 255, 255, self._on_max_changed
+        )
+        layout.addWidget(self._last_group)
 
-        # 亮度
-        b_group = QGroupBox("Brightness")
-        b_layout = QHBoxLayout()
-        self.slider_b = QSlider(Qt.Horizontal)
-        self.slider_b.setRange(-100, 100)
-        self.slider_b.setValue(0)
-        self.lbl_b = QLabel("0")
-        self.lbl_b.setFixedWidth(30)
-        b_layout.addWidget(self.slider_b)
-        b_layout.addWidget(self.lbl_b)
-        b_group.setLayout(b_layout)
-        layout.addWidget(b_group)
+        # Brightness
+        self.slider_b, self.lbl_b = self._make_slider_row(
+            "Brightness", -100, 100, 0, self._on_bc_changed
+        )
+        layout.addWidget(self._last_group)
 
-        # 对比度
-        c_group = QGroupBox("Contrast")
-        c_layout = QHBoxLayout()
-        self.slider_c = QSlider(Qt.Horizontal)
-        self.slider_c.setRange(-100, 100)
-        self.slider_c.setValue(0)
-        self.lbl_c = QLabel("0")
-        self.lbl_c.setFixedWidth(30)
-        c_layout.addWidget(self.slider_c)
-        c_layout.addWidget(self.lbl_c)
-        c_group.setLayout(c_layout)
-        layout.addWidget(c_group)
+        # Contrast
+        self.slider_c, self.lbl_c = self._make_slider_row(
+            "Contrast", -100, 100, 0, self._on_bc_changed
+        )
+        layout.addWidget(self._last_group)
 
         # 按钮
         btn_layout = QHBoxLayout()
@@ -171,11 +221,42 @@ class ImageAdjustDialog(QWidget):
         btn_layout.addWidget(btn_auto)
         layout.addLayout(btn_layout)
 
-        # 信号
-        self.slider_min.valueChanged.connect(self._on_min_changed)
-        self.slider_max.valueChanged.connect(self._on_max_changed)
-        self.slider_b.valueChanged.connect(self._on_bc_changed)
-        self.slider_c.valueChanged.connect(self._on_bc_changed)
+    def _make_slider_row(
+        self, title: str, lo: int, hi: int, default: int, callback
+    ) -> tuple[QSlider, QLabel]:
+        """创建一组：[-] slider [+] 数值的控件行"""
+        group = QGroupBox(title)
+        row = QHBoxLayout()
+
+        btn_minus = QPushButton("-")
+        btn_minus.setFixedWidth(28)
+        btn_minus.clicked.connect(lambda _, s=None: _adjust(-1))
+
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(lo, hi)
+        slider.setValue(default)
+
+        btn_plus = QPushButton("+")
+        btn_plus.setFixedWidth(28)
+        btn_plus.clicked.connect(lambda _, s=None: _adjust(1))
+
+        lbl = QLabel(str(default))
+        lbl.setFixedWidth(30)
+
+        row.addWidget(btn_minus)
+        row.addWidget(slider)
+        row.addWidget(btn_plus)
+        row.addWidget(lbl)
+        group.setLayout(row)
+
+        self._last_group = group
+
+        def _adjust(delta: int):
+            step = max(1, slider.singleStep())
+            slider.setValue(slider.value() + delta * step)
+
+        slider.valueChanged.connect(callback)
+        return slider, lbl
 
     # ─── 属性 ───
 
@@ -251,6 +332,28 @@ class ImageAdjustDialog(QWidget):
         self._block_slider_signals(False)
         self.changed.emit()
 
+    def _on_timer_timeout(self):
+        self._update_hist_overlay()
+        self.changed.emit()
+
+    def _update_hist_overlay(self):
+        """更新直方图上的 Min/Max 竖线"""
+        self._hist_widget.set_minmax(self._min_val, self._max_val)
+
+    def set_histogram(self, img: np.ndarray) -> None:
+        """根据图像计算直方图并显示"""
+        if img is None:
+            return
+        if img.ndim == 3:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = img
+        hist = cv2.calcHist([gray], [0], None, [256], [0, 256]).flatten()
+        self._hist = hist.astype(np.float64)
+        # log 缩放：让小峰也可见
+        self._hist_log = np.log1p(self._hist)
+        self._hist_widget.set_data(self._hist_log, self._min_val, self._max_val)
+
     def _auto(self):
         """Auto: 根据图像直方图自动设置 min/max（由 MainWindow 调用）"""
         self.changed.emit()
@@ -265,7 +368,6 @@ class ImageAdjustDialog(QWidget):
             return
         vals = img.flatten()
         if img.ndim == 3:
-            # 灰度化再算
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             vals = gray.flatten()
         lo = int(np.percentile(vals, 0.1))
@@ -280,6 +382,7 @@ class ImageAdjustDialog(QWidget):
         self.lbl_min.setText(str(lo))
         self.lbl_max.setText(str(hi))
         self._block_slider_signals(False)
+        self._hist_widget.set_minmax(lo, hi)
         self.changed.emit()
 
 
