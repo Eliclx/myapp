@@ -624,59 +624,106 @@ class TestMainWindow:
 # 7. image_adjust.py B/C + LUT 测试
 # ═══════════════════════════════════════════════
 
-from image_adjust import compute_lut, apply_bc, ndarray_to_pixmap
+from image_adjust import compute_bc_lut, compute_minmax_lut, apply_lut, ndarray_to_pixmap
 
 
-class TestLUT:
+class TestMinmaxLUT:
     def test_identity(self):
-        lut = compute_lut(0, 0)
+        lut = compute_minmax_lut(0, 255)
+        assert lut[0] == 0
+        assert lut[128] == 128
+        assert lut[255] == 255
+
+    def test_narrow_range(self):
+        lut = compute_minmax_lut(50, 200)
+        assert lut[50] == 0     # min → 0
+        assert lut[200] == 255  # max → 255
+        assert lut[125] == 127  # 中间线性
+
+    def test_below_min_is_zero(self):
+        lut = compute_minmax_lut(100, 200)
+        assert lut[0] == 0
+        assert lut[99] == 0
+
+    def test_above_max_is_255(self):
+        lut = compute_minmax_lut(100, 200)
+        assert lut[201] == 255
+        assert lut[255] == 255
+
+
+class TestBCLUT:
+    def test_identity(self):
+        lut = compute_bc_lut(0, 0)
         assert lut[0] == 0
         assert lut[128] == 128
         assert lut[255] == 255
 
     def test_brightness_positive(self):
-        lut = compute_lut(50, 0)
+        lut = compute_bc_lut(50, 0)
         assert lut[0] > 0
-        assert lut[255] == 255  # 已经最大，被 clip
+        assert lut[255] == 255
 
     def test_brightness_negative(self):
-        lut = compute_lut(-50, 0)
+        lut = compute_bc_lut(-50, 0)
         assert lut[0] == 0
         assert lut[255] < 255
 
     def test_contrast_midpoint(self):
-        lut = compute_lut(0, 50)
-        assert lut[128] == 128  # 对比度不改变中点
+        lut = compute_bc_lut(0, 50)
+        assert lut[128] == 128
 
     def test_contrast_darkens_shadows(self):
-        lut = compute_lut(0, 50)
-        assert lut[50] < 50  # 暗区更暗
+        lut = compute_bc_lut(0, 50)
+        assert lut[50] < 50
 
     def test_contrast_brightens_highlights(self):
-        lut = compute_lut(0, 50)
-        assert lut[200] > 200  # 亮区更亮
+        lut = compute_bc_lut(0, 50)
+        assert lut[200] > 200
 
 
-class TestApplyBC:
+class TestApplyLUT:
     def test_identity_no_change(self):
         img = np.full((100, 100, 3), 128, dtype=np.uint8)
-        result = apply_bc(img, 0, 0)
+        lut = compute_bc_lut(0, 0)
+        result = apply_lut(img, lut)
         assert np.array_equal(result, img)
 
     def test_brightness_changes(self):
         img = np.full((100, 100, 3), 128, dtype=np.uint8)
-        result = apply_bc(img, 50, 0)
+        lut = compute_bc_lut(50, 0)
+        result = apply_lut(img, lut)
         assert result[50, 50, 0] > 128
 
     def test_does_not_modify_original(self):
         img = np.full((100, 100, 3), 128, dtype=np.uint8)
-        _ = apply_bc(img, 50, 50)
-        assert img[50, 50, 0] == 128  # 原图不变
+        lut = compute_bc_lut(50, 50)
+        _ = apply_lut(img, lut)
+        assert img[50, 50, 0] == 128
 
     def test_grayscale(self):
         img = np.full((100, 100), 128, dtype=np.uint8)
-        result = apply_bc(img, 50, 0)
+        lut = compute_bc_lut(50, 0)
+        result = apply_lut(img, lut)
         assert result[50, 50] > 128
+
+    def test_minmax_stretch(self):
+        img = np.full((100, 100, 3), 128, dtype=np.uint8)
+        lut = compute_minmax_lut(100, 200)
+        result = apply_lut(img, lut)
+        # 128 在 [100,200] 中间 → (128-100)*255/100 = 71
+        assert result[50, 50, 0] == 71
+
+    def test_minmax_stretch_low(self):
+        img = np.full((100, 100, 3), 100, dtype=np.uint8)
+        lut = compute_minmax_lut(100, 200)
+        result = apply_lut(img, lut)
+        assert result[50, 50, 0] == 0  # min → 0
+
+    def test_minmax_stretch_high(self):
+        img = np.full((100, 100, 3), 200, dtype=np.uint8)
+        lut = compute_minmax_lut(100, 200)
+        result = apply_lut(img, lut)
+        assert result[50, 50, 0] == 255  # max → 255
 
 
 class TestNdarrayToPixmap:

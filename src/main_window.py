@@ -30,7 +30,7 @@ from annotation import AnnotationData, BBox  # pyright: ignore[reportImplicitRel
 from export_engine import export_annotations  # pyright: ignore[reportImplicitRelativeImport]
 from image_adjust import (
     ImageAdjustDialog,
-    apply_bc,
+    apply_lut,
     ndarray_to_pixmap,
     show_image_info,
 )  # pyright: ignore[reportImplicitRelativeImport]
@@ -409,18 +409,23 @@ class MainWindow(QMainWindow):
             return
         if self._bc_dialog is None:
             self._bc_dialog = ImageAdjustDialog(self)
-            self._bc_dialog._apply = self._apply_bc
+            # 用信号连接（不是 monkey-patch）
+            self._bc_dialog.changed.connect(self._apply_bc)
         self._bc_dialog.show()
         self._bc_dialog.raise_()
 
     def _apply_bc(self):
         if self._current_img is None or self._bc_dialog is None:
             return
-        adjusted = apply_bc(
-            self._current_img, self._bc_dialog.brightness, self._bc_dialog.contrast
-        )
+        lut = self._bc_dialog.get_lut()
+        adjusted = apply_lut(self._current_img, lut)
         pixmap = ndarray_to_pixmap(adjusted)
         self.image_view.update_display_pixmap(pixmap)
+
+    def _auto_bc(self):
+        """Auto 按钮：自动拉伸"""
+        if self._bc_dialog and self._current_img is not None:
+            self._bc_dialog.auto_stretch(self._current_img)
 
     # ─── 图像信息 ───
 
