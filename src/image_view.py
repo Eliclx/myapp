@@ -167,6 +167,17 @@ class ImageView(QGraphicsView):
         self._base_scale = self.transform().m11()
         self.zoom_changed.emit(100)
 
+    def load_from_pixmap(self, pixmap: QPixmap, img_w: int, img_h: int) -> None:
+        """从已有 QPixmap 加载显示（不重复读文件），保持缩放比例"""
+        self._scene.clear()
+        self._bbox_items.clear()
+        self._original_pixmap = pixmap
+        self._pixmap_item = self._scene.addPixmap(pixmap)
+        self._scene.setSceneRect(QRectF(0, 0, img_w, img_h))
+        self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+        self._base_scale = self.transform().m11()
+        self.zoom_changed.emit(100)
+
     def update_display_pixmap(self, pixmap: QPixmap) -> None:
         """替换当前显示的 pixmap（用于 B/C 调整），保持缩放和标注不变"""
         if self._pixmap_item is None:

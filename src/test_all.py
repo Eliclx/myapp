@@ -618,3 +618,156 @@ class TestMainWindow:
         win = MainWindow()
         win._on_label_selected("dog")
         assert win.image_view._current_label == "dog"
+
+
+# ═══════════════════════════════════════════════
+# 7. image_adjust.py B/C + LUT 测试
+# ═══════════════════════════════════════════════
+
+from image_adjust import compute_lut, apply_bc, ndarray_to_pixmap
+
+
+class TestLUT:
+    def test_identity(self):
+        lut = compute_lut(0, 0)
+        assert lut[0] == 0
+        assert lut[128] == 128
+        assert lut[255] == 255
+
+    def test_brightness_positive(self):
+        lut = compute_lut(50, 0)
+        assert lut[0] > 0
+        assert lut[255] == 255  # 已经最大，被 clip
+
+    def test_brightness_negative(self):
+        lut = compute_lut(-50, 0)
+        assert lut[0] == 0
+        assert lut[255] < 255
+
+    def test_contrast_midpoint(self):
+        lut = compute_lut(0, 50)
+        assert lut[128] == 128  # 对比度不改变中点
+
+    def test_contrast_darkens_shadows(self):
+        lut = compute_lut(0, 50)
+        assert lut[50] < 50  # 暗区更暗
+
+    def test_contrast_brightens_highlights(self):
+        lut = compute_lut(0, 50)
+        assert lut[200] > 200  # 亮区更亮
+
+
+class TestApplyBC:
+    def test_identity_no_change(self):
+        img = np.full((100, 100, 3), 128, dtype=np.uint8)
+        result = apply_bc(img, 0, 0)
+        assert np.array_equal(result, img)
+
+    def test_brightness_changes(self):
+        img = np.full((100, 100, 3), 128, dtype=np.uint8)
+        result = apply_bc(img, 50, 0)
+        assert result[50, 50, 0] > 128
+
+    def test_does_not_modify_original(self):
+        img = np.full((100, 100, 3), 128, dtype=np.uint8)
+        _ = apply_bc(img, 50, 50)
+        assert img[50, 50, 0] == 128  # 原图不变
+
+    def test_grayscale(self):
+        img = np.full((100, 100), 128, dtype=np.uint8)
+        result = apply_bc(img, 50, 0)
+        assert result[50, 50] > 128
+
+
+class TestNdarrayToPixmap:
+    def test_color(self):
+        img = np.zeros((100, 100, 3), dtype=np.uint8)
+        pm = ndarray_to_pixmap(img)
+        assert not pm.isNull()
+        assert pm.width() == 100
+        assert pm.height() == 100
+
+    def test_grayscale(self):
+        img = np.zeros((100, 100), dtype=np.uint8)
+        pm = ndarray_to_pixmap(img)
+        assert not pm.isNull()
+        assert pm.width() == 100
+
+
+# ═══════════════════════════════════════════════
+# 8. export_engine.py crop > img 测试
+# ═══════════════════════════════════════════════
+
+
+class TestCropLargerThanImage:
+    def test_crop_center_when_larger(self):
+        """crop > img 时居中"""
+        bbox = BBox(10, 10, 50, 50)
+        cx, cy = _make_crop_center(bbox, 0, 100, 80, 200, 200)
+        assert cx == 50  # img_w // 2
+        assert cy == 40  # img_h // 2
+
+    def test_crop_rect_when_larger(self):
+        """crop > img 时 x1 可以 < 0（padding 区域）"""
+        x1, y1, x2, y2 = _compute_crop_rect(50, 40, 200, 200, 100, 80)
+        assert x2 - x1 == 200
+        assert y2 - y1 == 200
+
+    def test_export_crop_larger_than_image(self):
+        """完整导出：crop 大于图片尺寸"""
+        with tempfile.TemporaryDirectory() as tmp:
+            img_path = str(Path(tmp) / "small.png")
+            fake_img = np.random.randint(0, 255, (80, 100, 3), dtype=np.uint8)
+            cv2.imwrite(img_path, fake_img)
+
+            bboxes = [BBox(20, 20, 60, 60, "obj")]
+            files = export_annotations(
+                bboxes=bboxes,
+                image_path=img_path,
+                img_w=100,
+                img_h=80,
+                crop_w=200,
+                crop_h=200,
+                jitter=0,
+                output_dir=str(Path(tmp) / "out"),
+            )
+            pngs = [f for f in files if f.endswith(".png")]
+            assert len(pngs) == 1
+            result = cv2.imread(pngs[0])
+            assert result is not None
+            assert result.shape == (200, 200, 3)
+
+
+# ═══════════════════════════════════════════════
+# 9. 文件名唯一性测试
+# ═══════════════════════════════════════════════
+
+
+class TestFilenameUniqueness:
+    def test_unique_filenames(self):
+        """不同 bbox 应生成不同文件名"""
+        with tempfile.TemporaryDirectory() as tmp:
+            img_path = str(Path(tmp) / "test.png")
+            fake_img = np.zeros((500, 500, 3), dtype=np.uint8)
+            cv2.imwrite(img_path, fake_img)
+
+            bboxes = [
+                BBox(50, 50, 100, 100, "a"),
+                BBox(200, 200, 300, 300, "b"),
+            ]
+            files = export_annotations(
+                bboxes=bboxes,
+                image_path=img_path,
+                img_w=500,
+                img_h=500,
+                crop_w=200,
+                crop_h=200,
+                jitter=0,
+                output_dir=str(Path(tmp) / "out"),
+            )
+            pngs = [Path(f).name for f in files if f.endswith(".png")]
+            assert len(pngs) == len(set(pngs))  # 无重复
+            # 文件名包含坐标信息
+            for name in pngs:
+                assert "_cx" in name
+                assert "_cy" in name

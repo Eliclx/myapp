@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QKeySequence, QPixmap
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -34,6 +34,7 @@ from image_adjust import (
     ndarray_to_pixmap,
     show_image_info,
 )  # pyright: ignore[reportImplicitRelativeImport]
+from image_list_panel import ImageListPanel  # pyright: ignore[reportImplicitRelativeImport]
 from image_view import ImageView  # pyright: ignore[reportImplicitRelativeImport]
 from label_panel import LabelPanel  # pyright: ignore[reportImplicitRelativeImport]
 from settings_dialog import QuickSettingsBar, SettingsDialog  # pyright: ignore[reportImplicitRelativeImport]
@@ -76,11 +77,14 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(4, 4, 4, 4)
 
-        # 上半部分：左类别面板 + 右图视图
+        # 上半部分：左类别面板 + 图片列表 + 右图视图
         content_layout = QHBoxLayout()
         self.label_panel = LabelPanel()
+        self.image_list_panel = ImageListPanel()
+        self.image_list_panel.hide()  # 没打开文件夹时隐藏
         self.image_view = ImageView()
         content_layout.addWidget(self.label_panel)
+        content_layout.addWidget(self.image_list_panel)
         content_layout.addWidget(self.image_view, stretch=1)
         main_layout.addLayout(content_layout, stretch=1)
 
@@ -144,6 +148,7 @@ class MainWindow(QMainWindow):
         self.image_view.navigate_prev.connect(self._prev_image)
         self.image_view.navigate_next.connect(self._next_image)
         self.image_view.zoom_changed.connect(self._on_zoom_changed)
+        self.image_list_panel.image_selected.connect(self._on_list_image_selected)
         self.label_panel.label_selected.connect(self._on_label_selected)
         # 底部抖动 SpinBox 联动
         self.quick_settings.spin_jitter.valueChanged.connect(self._on_jitter_changed)
@@ -175,6 +180,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "该文件夹下没有找到图片文件")
             return
         self._image_index = 0
+        self.image_list_panel.load_image_list(self._image_list)
+        self.image_list_panel.show()
         self._load_image(self._image_list[0])
 
     def _scan_images(self, dir_path: str) -> list[str]:
@@ -193,11 +200,18 @@ class MainWindow(QMainWindow):
         if self._image_list and self._image_index < len(self._image_list) - 1:
             self._navigate_to(self._image_index + 1)
 
+    def _on_list_image_selected(self, index: int):
+        """从图片列表点击选择"""
+        if 0 <= index < len(self._image_list):
+            self._navigate_to(index)
+
     def _navigate_to(self, index: int) -> None:
         """切换到指定图片，保存当前标注 + 恢复目标标注"""
         self._save_current_annotations()
         self._image_index = index
         self._load_image(self._image_list[index])
+        # 同步列表高亮
+        self.image_list_panel.set_current_index(index)
         # 恢复缓存标注
         path = self._image_list[index]
         if path in self._annotations_cache:
@@ -212,25 +226,30 @@ class MainWindow(QMainWindow):
             self._annotations_cache[self.data.image_path] = list(self.data.bboxes)
 
     def _load_image(self, path: str) -> None:
-        pixmap = QPixmap(path)
-        if pixmap.isNull():
+        # 只读一次文件：cv2.imread → ndarray → QPixmap
+        img = cv2.imread(path, cv2.IMREAD_COLOR)
+        if img is None:
             QMessageBox.warning(self, "错误", f"无法加载图片:\n{path}")
+            return
+        self._current_img = img
+
+        h, w = img.shape[:2]
+        pixmap = ndarray_to_pixmap(img)
+        if pixmap.isNull():
+            QMessageBox.warning(self, "错误", f"无法渲染图片:\n{path}")
             return
 
         self.data = AnnotationData(
             image_path=path,
-            image_width=pixmap.width(),
-            image_height=pixmap.height(),
+            image_width=w,
+            image_height=h,
         )
-        self.image_view.load_image(path)
+        self.image_view.load_from_pixmap(pixmap, w, h)
         self.image_view.set_current_label(self.label_panel.current_label())
-
-        # 缓存 ndarray 用于读取像素值
-        self._current_img = cv2.imread(path, cv2.IMREAD_COLOR)
 
         # 更新状态栏
         name = Path(path).name
-        size_info = f"{pixmap.width()}×{pixmap.height()}"
+        size_info = f"{w}×{h}"
         if self._image_list:
             idx_info = f"{self._image_index + 1}/{len(self._image_list)}"
             self.lbl_img.setText(f"图片: {name} ({size_info}) [{idx_info}]")
