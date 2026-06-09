@@ -552,10 +552,9 @@ class TestQuickSettingsBar:
         from settings_dialog import QuickSettingsBar
 
         bar = QuickSettingsBar()
-        bar.update_display(1280, 720, 100, "out")
+        bar.update_display(1280, 720, "out")
         assert "1280" in bar.lbl_crop.text()
         assert "720" in bar.lbl_crop.text()
-        assert "100" in bar.lbl_jitter.text()
         assert "out" in bar.lbl_output.text()
 
 

@@ -18,10 +18,16 @@ def _make_crop_center(
     """计算裁剪中心（目标中心 + 随机抖动），clamp 到有效范围"""
     cx = bbox.cx + random.randint(-jitter, jitter)
     cy = bbox.cy + random.randint(-jitter, jitter)
-    # clamp：确保裁剪区域尽量在图内
     half_w, half_h = crop_w // 2, crop_h // 2
-    cx = max(half_w, min(img_w - half_w, cx))
-    cy = max(half_h, min(img_h - half_h, cy))
+    # crop > img 时居中放置，否则 clamp 到图片范围内
+    if crop_w <= img_w:
+        cx = max(half_w, min(img_w - half_w, cx))
+    else:
+        cx = img_w // 2
+    if crop_h <= img_h:
+        cy = max(half_h, min(img_h - half_h, cy))
+    else:
+        cy = img_h // 2
     return cx, cy
 
 
@@ -33,15 +39,16 @@ def _compute_crop_rect(
     y1 = cy - crop_h // 2
     x2 = x1 + crop_w
     y2 = y1 + crop_h
-    # clamp
-    if x1 < 0:
-        x1, x2 = 0, crop_w
-    if y1 < 0:
-        y1, y2 = 0, crop_h
-    if x2 > img_w:
-        x1, x2 = img_w - crop_w, img_w
-    if y2 > img_h:
-        y1, y2 = img_h - crop_h, img_h
+    if crop_w <= img_w:
+        if x1 < 0:
+            x1, x2 = 0, crop_w
+        if x2 > img_w:
+            x1, x2 = img_w - crop_w, img_w
+    if crop_h <= img_h:
+        if y1 < 0:
+            y1, y2 = 0, crop_h
+        if y2 > img_h:
+            y1, y2 = img_h - crop_h, img_h
     return x1, y1, x2, y2
 
 
@@ -184,10 +191,11 @@ def export_annotations(
         if not local_objects:
             continue
 
-        # 4. 生成文件名
+        # 4. 生成文件名（stem + 裁剪中心坐标 + 索引，保证唯一）
         stem = Path(image_path).stem
-        png_name = f"{stem}_{i:04d}.png"
-        xml_name = f"{stem}_{i:04d}.xml"
+        base_name = f"{stem}_cx{cx}_cy{cy}_{i:04d}"
+        png_name = f"{base_name}.png"
+        xml_name = f"{base_name}.xml"
 
         # 5. 裁剪保存 PNG
         actual_crop_w = crop_x2 - crop_x1

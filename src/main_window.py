@@ -6,8 +6,11 @@ from pathlib import Path
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
 
+import cv2
+import numpy as np
+
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QKeySequence, QPixmap
 from PyQt5.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -16,6 +19,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QShortcut,
     QStatusBar,
     QToolBar,
     QVBoxLayout,
@@ -46,11 +50,15 @@ class MainWindow(QMainWindow):
         self._image_index: int = -1
         self._annotations_cache: dict[str, list[BBox]] = {}
 
+        # 当前图片 ndarray（用于读取像素值）
+        self._current_img: np.ndarray | None = None
+
         self.setAcceptDrops(True)
 
         self._setup_ui()
         self._setup_toolbar()
         self._setup_statusbar()
+        self._setup_shortcuts()
         self._connect_signals()
 
     def _setup_ui(self):
@@ -93,13 +101,20 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status)
 
         self.lbl_pos = QLabel("坐标: -")
+        self.lbl_pixel = QLabel("像素: -")
         self.lbl_img = QLabel("图片: 未加载")
         self.lbl_count = QLabel("标注: 0")
         self.lbl_zoom = QLabel("缩放: 100%")
 
-        for lbl in (self.lbl_pos, self.lbl_img, self.lbl_count, self.lbl_zoom):
+        for lbl in (self.lbl_pos, self.lbl_pixel, self.lbl_img, self.lbl_count, self.lbl_zoom):
             lbl.setStyleSheet("padding: 0 8px;")
             self.status.addPermanentWidget(lbl)
+
+    def _setup_shortcuts(self):
+        QShortcut(QKeySequence("Ctrl+O"), self, self._open_image)
+        QShortcut(QKeySequence("Ctrl+Shift+O"), self, self._open_folder)
+        QShortcut(QKeySequence("Ctrl+S"), self, self._export)
+        QShortcut(QKeySequence("Ctrl+,"), self, self._open_settings)
 
     def _connect_signals(self):
         self.image_view.mouse_moved.connect(self._on_mouse_moved)
@@ -109,6 +124,8 @@ class MainWindow(QMainWindow):
         self.image_view.navigate_prev.connect(self._prev_image)
         self.image_view.navigate_next.connect(self._next_image)
         self.label_panel.label_selected.connect(self._on_label_selected)
+        # 底部抖动 SpinBox 联动
+        self.quick_settings.spin_jitter.valueChanged.connect(self._on_jitter_changed)
 
     # ─── 操作 ───
 
@@ -187,6 +204,9 @@ class MainWindow(QMainWindow):
         self.image_view.load_image(path)
         self.image_view.set_current_label(self.label_panel.current_label())
 
+        # 缓存 ndarray 用于读取像素值
+        self._current_img = cv2.imread(path, cv2.IMREAD_COLOR)
+
         # 更新状态栏
         name = Path(path).name
         size_info = f"{pixmap.width()}×{pixmap.height()}"
@@ -264,7 +284,8 @@ class MainWindow(QMainWindow):
             self._crop_h = h
             self._jitter = dlg.jitter
             self._output_dir = dlg.output_dir
-            self.quick_settings.update_display(w, h, dlg.jitter, dlg.output_dir)
+            self.quick_settings.spin_jitter.setValue(dlg.jitter)
+            self.quick_settings.update_display(w, h, dlg.output_dir)
 
     def _clear_annotations(self):
         if self.data.bboxes:
@@ -283,6 +304,21 @@ class MainWindow(QMainWindow):
 
     def _on_mouse_moved(self, x: int, y: int):
         self.lbl_pos.setText(f"坐标: ({x}, {y})")
+        # 显示像素值
+        if self._current_img is not None:
+            h, w = self._current_img.shape[:2]
+            if 0 <= x < w and 0 <= y < h:
+                val = self._current_img[y, x]
+                if self._current_img.ndim == 2:
+                    self.lbl_pixel.setText(f"像素: {int(val)}")
+                else:
+                    # OpenCV BGR 顺序
+                    b, g, r = int(val[0]), int(val[1]), int(val[2])
+                    self.lbl_pixel.setText(f"像素: ({r}, {g}, {b})")
+            else:
+                self.lbl_pixel.setText("像素: -")
+        else:
+            self.lbl_pixel.setText("像素: -")
 
     def _on_bbox_created(self, bbox: BBox):
         # 自动赋予当前选中的类别
@@ -318,6 +354,9 @@ class MainWindow(QMainWindow):
 
     def _on_label_selected(self, label: str):
         self.image_view.set_current_label(label)
+
+    def _on_jitter_changed(self, value: int):
+        self._jitter = value
 
     def _update_count(self):
         self.lbl_count.setText(f"标注: {len(self.data.bboxes)}")
