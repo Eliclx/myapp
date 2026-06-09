@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -32,12 +34,12 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
 
         self.data = AnnotationData()
-        self._settings = {
-            "crop_w": 640,
-            "crop_h": 640,
-            "jitter": 50,
-            "output_dir": "output",
-        }
+        self._crop_w: int = 640
+        self._crop_h: int = 640
+        self._jitter: int = 50
+        self._output_dir: str = "output"
+
+        self.setAcceptDrops(True)
 
         self._setup_ui()
         self._setup_toolbar()
@@ -108,8 +110,6 @@ class MainWindow(QMainWindow):
         self._load_image(path)
 
     def _load_image(self, path: str) -> None:
-        from PyQt5.QtGui import QPixmap
-
         pixmap = QPixmap(path)
         if pixmap.isNull():
             QMessageBox.warning(self, "错误", f"无法加载图片:\n{path}")
@@ -145,10 +145,10 @@ class MainWindow(QMainWindow):
             )
             return
 
-        output_dir = self._settings["output_dir"]
-        crop_w = self._settings["crop_w"]
-        crop_h = self._settings["crop_h"]
-        jitter = self._settings["jitter"]
+        output_dir = self._output_dir
+        crop_w = self._crop_w
+        crop_h = self._crop_h
+        jitter = self._jitter
 
         # 进度对话框
         progress = QProgressDialog("导出中...", "取消", 0, len(self.data.bboxes), self)
@@ -158,8 +158,7 @@ class MainWindow(QMainWindow):
 
         def on_progress(done, _total):
             progress.setValue(done)
-            if progress.wasCanceled():
-                return
+            return progress.wasCanceled()
 
         files = export_annotations(
             bboxes=self.data.bboxes,
@@ -184,17 +183,17 @@ class MainWindow(QMainWindow):
 
     def _open_settings(self):
         dlg = SettingsDialog(self)
-        dlg.spin_crop_w.setValue(self._settings["crop_w"])
-        dlg.spin_crop_h.setValue(self._settings["crop_h"])
-        dlg.spin_jitter.setValue(self._settings["jitter"])
-        dlg.edit_output_dir.setText(self._settings["output_dir"])
+        dlg.spin_crop_w.setValue(self._crop_w)
+        dlg.spin_crop_h.setValue(self._crop_h)
+        dlg.spin_jitter.setValue(self._jitter)
+        dlg.edit_output_dir.setText(self._output_dir)
 
         if dlg.exec_() == dlg.Accepted:
             w, h = dlg.crop_size
-            self._settings["crop_w"] = w
-            self._settings["crop_h"] = h
-            self._settings["jitter"] = dlg.jitter
-            self._settings["output_dir"] = dlg.output_dir
+            self._crop_w = w
+            self._crop_h = h
+            self._jitter = dlg.jitter
+            self._output_dir = dlg.output_dir
             self.quick_settings.update_display(w, h, dlg.jitter, dlg.output_dir)
 
     def _clear_annotations(self):
@@ -223,19 +222,14 @@ class MainWindow(QMainWindow):
         self.data.add_bbox(bbox)
         self._update_count()
         # 同步图形项的显示
-        for item in self.image_view._bbox_items:
-            if item.bbox is bbox:
-                item._update_style()
-                break
+        self.image_view.update_bbox_style(bbox)
 
     def _on_bbox_deleted(self):
         # 重建数据
-        self.data.bboxes = [item.bbox for item in self.image_view._bbox_items]
+        self.data.bboxes = self.image_view.get_bboxes()
         self._update_count()
 
     def _on_label_edit(self, bbox: BBox):
-        from PyQt5.QtWidgets import QInputDialog
-
         labels = self.label_panel.get_all_labels()
         current = bbox.label or ""
         label, ok = QInputDialog.getItem(
@@ -250,10 +244,7 @@ class MainWindow(QMainWindow):
             bbox.label = label.strip()
             self.label_panel.add_label(label.strip())
             # 更新图形项
-            for item in self.image_view._bbox_items:
-                if item.bbox is bbox:
-                    item._update_style()
-                    break
+            self.image_view.update_bbox_style(bbox)
 
     def _on_label_selected(self, label: str):
         self.image_view.set_current_label(label)
@@ -268,7 +259,7 @@ class MainWindow(QMainWindow):
         # 窗口大小变化时，如果有图片就重新适配
         if self.data.is_loaded:
             self.image_view.fitInView(
-                self.image_view._scene.sceneRect(), Qt.KeepAspectRatio
+                self.image_view.get_scene_rect(), Qt.KeepAspectRatio
             )
 
     def dragEnterEvent(self, event):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QRectF, Qt, pyqtSignal
+from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt5.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QGraphicsItem,
@@ -35,17 +35,6 @@ COLORS = [
     "#a9a9a9",
 ]
 
-LABEL_COLORS: dict[str, str] = {}
-_color_idx = 0
-
-
-def get_label_color(label: str) -> str:
-    global _color_idx
-    if label not in LABEL_COLORS:
-        LABEL_COLORS[label] = COLORS[_color_idx % len(COLORS)]
-        _color_idx += 1
-    return LABEL_COLORS[label]
-
 
 class BBoxGraphicsItem(QGraphicsRectItem):
     """可交互的标注框图形项"""
@@ -61,7 +50,7 @@ class BBoxGraphicsItem(QGraphicsRectItem):
         self._update_style()
 
     def _update_style(self):
-        color = QColor(get_label_color(self.bbox.label))
+        color = QColor(self.view.get_label_color(self.bbox.label))
         pen = QPen(color, 3)
         pen.setCosmetic(True)  # 固定像素宽度，不随缩放变化
         self.setPen(pen)
@@ -89,8 +78,8 @@ class BBoxGraphicsItem(QGraphicsRectItem):
         font = painter.font()
         font.setPixelSize(16)
         painter.setFont(font)
-        painter.setPen(QPen(QColor(get_label_color(self.bbox.label))))
-        painter.drawText(rect.topLeft() + __import__("QtCore").QPointF(2, -4), label)
+        painter.setPen(QPen(QColor(self.view.get_label_color(self.bbox.label))))
+        painter.drawText(rect.topLeft() + QPointF(2, -4), label)
 
     def mouseDoubleClickEvent(self, event):
         # 双击编辑标签 → 由 view 处理
@@ -117,6 +106,10 @@ class ImageView(QGraphicsView):
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setDragMode(QGraphicsView.NoDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+
+        # 颜色分配（实例级，避免多实例共享）
+        self._label_colors: dict[str, str] = {}
+        self._color_idx = 0
 
         # 状态
         self._pixmap_item = None
@@ -167,6 +160,29 @@ class ImageView(QGraphicsView):
         self.clear_bbox_items()
         for bbox in bboxes:
             self.add_bbox_item(bbox)
+
+    def get_label_color(self, label: str) -> str:
+        """为类别分配颜色（实例级）"""
+        if label not in self._label_colors:
+            self._label_colors[label] = COLORS[self._color_idx % len(COLORS)]
+            self._color_idx += 1
+        return self._label_colors[label]
+
+    def get_bbox_count(self) -> int:
+        return len(self._bbox_items)
+
+    def get_bboxes(self) -> list[BBox]:
+        return [item.bbox for item in self._bbox_items]
+
+    def get_scene_rect(self) -> QRectF:
+        return self._scene.sceneRect()
+
+    def update_bbox_style(self, bbox: BBox) -> None:
+        """更新指定 bbox 对应图形项的样式"""
+        for item in self._bbox_items:
+            if item.bbox is bbox:
+                item._update_style()
+                break
 
     def set_current_label(self, label: str) -> None:
         self._current_label = label

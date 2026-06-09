@@ -1,6 +1,16 @@
-# myapp
+# 🏷️ LabelTool - 目标检测标注工具
 
-一个用 PyInstaller 打包的跨平台 Python 项目。
+在大图上画标注框，自动裁剪为小图 + 生成 VOC XML 格式标注文件。支持随机抖动（防过拟合）、类别管理、拖拽打开图片。
+
+## 功能
+
+- 🖼️ 打开大图，鼠标画框标注目标
+- 🏷️ 类别管理：添加/选择/双击修改类别
+- ✂️ 自动裁剪：每个标注框为中心生成小图 + VOC XML
+- 🎲 随机抖动：裁剪中心可偏移，数据增强防过拟合
+- 🖱️ 拖拽打开图片、滚轮缩放、中键/Shift 拖动画布
+- ⚙️ 可配置裁剪尺寸、抖动范围、输出目录
+- 📦 PyInstaller 一键打包，GitHub Actions 双平台构建
 
 ## 开发
 
@@ -9,34 +19,67 @@ conda activate py_env
 python src/main.py
 ```
 
+## 测试
+
+```bash
+conda activate py_env
+cd src && python -m pytest test_all.py -v
+```
+
 ## 本机打包（Linux）
 
 ```bash
 conda activate py_env
 pyinstaller myapp.spec
-# 产物在 dist/ 目录
+# 产物在 dist/myapp/ 目录
 ```
 
 ## 跨平台打包（Windows + Linux）
 
-推送到 GitHub 后，GitHub Actions 自动构建双平台产物：
+推 tag 触发 GitHub Actions 自动构建：
 
 ```bash
-git push origin main
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
-到 GitHub Releases 页面下载对应平台的压缩包。
+到 GitHub Releases 页面下载对应平台压缩包。
 
 ## 项目结构
 
 ```
 myapp/
 ├── src/
-│   └── main.py          # 应用入口
-├── myapp.spec            # PyInstaller 配置
-├── .github/
-│   └── workflows/
-│       └── build.yml     # CI: 双平台自动打包
-├── requirements.txt      # 依赖
+│   ├── main.py              # 应用入口
+│   ├── main_window.py       # 主窗口：组装所有组件
+│   ├── annotation.py        # 数据模型：BBox + AnnotationData
+│   ├── image_view.py        # 大图交互视图：缩放、拖动、画框
+│   ├── label_panel.py       # 左侧类别管理面板
+│   ├── export_engine.py     # 导出引擎：裁剪小图 + VOC XML
+│   ├── settings_dialog.py   # 导出设置对话框 + 快捷参数栏
+│   └── test_all.py          # 测试套件（纯逻辑 + GUI 冒烟）
+├── myapp.spec                # PyInstaller 配置
+├── .github/workflows/
+│   └── build.yml             # CI: 双平台自动打包
+├── requirements.txt          # 依赖
 └── README.md
 ```
+
+## 依赖
+
+- Python 3.11
+- PyQt5 >= 5.15
+- OpenCV (opencv-python-headless) >= 4.5
+- lxml >= 4.9
+
+## 操作说明
+
+| 操作 | 快捷键 |
+|---|---|
+| 画标注框 | 左键拖拽 |
+| 拖动画布 | 中键 / Shift+左键 |
+| 缩放 | 滚轮 |
+| 适配视口 | F |
+| 删除选中框 | Delete / Backspace |
+| 修改类别 | 双击标注框 |
+| 打开图片 | 拖拽文件到窗口 |

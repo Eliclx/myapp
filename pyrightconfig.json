@@ -1,0 +1,5 @@
+{
+  "extraPaths": ["/home/lx/miniconda3/envs/py_env/lib/python3.11/site-packages"],
+  "pythonPath": "/home/lx/miniconda3/envs/py_env/bin/python",
+  "include": ["src"]
+}

@@ -73,7 +73,7 @@ def _bboxes_in_crop(
 
 
 def crop_and_save_png(
-    image_path: str,
+    img: np.ndarray,
     crop_x1: int,
     crop_y1: int,
     crop_x2: int,
@@ -83,11 +83,6 @@ def crop_and_save_png(
     save_path: str,
 ) -> None:
     """从大图裁剪指定区域，padding 到 crop_w × crop_h，保存为 PNG"""
-    # 用 OpenCV 读取（支持大图、按 ROI 高效读取）
-    img = cv2.imread(image_path, cv2.IMREAD_COLOR)
-    if img is None:
-        raise ValueError(f"无法读取图片: {image_path}")
-
     h, w = img.shape[:2]
 
     # 计算有效区域
@@ -163,6 +158,14 @@ def export_annotations(
     output_path.mkdir(parents=True, exist_ok=True)
     generated: list[str] = []
 
+    if not bboxes:
+        return generated
+
+    # 只读一次大图，避免重复 I/O
+    img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError(f"无法读取图片: {image_path}")
+
     for i, bbox in enumerate(bboxes):
         x1, y1, x2, y2 = bbox.normalized()
         if (x2 - x1) < 5 or (y2 - y1) < 5:
@@ -191,7 +194,7 @@ def export_annotations(
         actual_crop_h = crop_y2 - crop_y1
         png_path = str(output_path / png_name)
         crop_and_save_png(
-            image_path,
+            img,
             crop_x1,
             crop_y1,
             crop_x2,
@@ -211,7 +214,7 @@ def export_annotations(
 
         generated.extend([png_path, xml_path])
 
-        if progress_cb:
-            progress_cb(i + 1, len(bboxes))
+        if progress_cb and progress_cb(i + 1, len(bboxes)):
+            break  # 用户取消
 
     return generated
