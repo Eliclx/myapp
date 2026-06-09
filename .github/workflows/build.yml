@@ -4,7 +4,10 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,10 +16,8 @@ jobs:
         include:
           - os: windows-latest
             artifact: myapp-windows
-            ext: .exe
           - os: ubuntu-latest
             artifact: myapp-linux
-            ext: ""
 
     runs-on: ${{ matrix.os }}
 
