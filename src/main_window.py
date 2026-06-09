@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self.image_view.label_edit_requested.connect(self._on_label_edit)
         self.image_view.navigate_prev.connect(self._prev_image)
         self.image_view.navigate_next.connect(self._next_image)
+        self.image_view.zoom_changed.connect(self._on_zoom_changed)
         self.label_panel.label_selected.connect(self._on_label_selected)
         # 底部抖动 SpinBox 联动
         self.quick_settings.spin_jitter.valueChanged.connect(self._on_jitter_changed)
@@ -357,6 +358,9 @@ class MainWindow(QMainWindow):
 
     def _on_jitter_changed(self, value: int):
         self._jitter = value
+
+    def _on_zoom_changed(self, pct: int):
+        self.lbl_zoom.setText(f"缩放: {pct}%")
 
     def _update_count(self):
         self.lbl_count.setText(f"标注: {len(self.data.bboxes)}")

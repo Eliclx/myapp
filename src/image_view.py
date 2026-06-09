@@ -121,6 +121,7 @@ class ImageView(QGraphicsView):
     navigate_prev = pyqtSignal()
     navigate_next = pyqtSignal()
     start_annotate = pyqtSignal()
+    zoom_changed = pyqtSignal(int)  # 缩放百分比
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -147,6 +148,7 @@ class ImageView(QGraphicsView):
         self._current_label = ""
         self._panning = False
         self._pan_start = None
+        self._base_scale = 1.0  # fitInView 时的缩放基准
 
     # ─── 图片加载 ───
 
@@ -161,6 +163,9 @@ class ImageView(QGraphicsView):
         self._pixmap_item = self._scene.addPixmap(pixmap)
         self._scene.setSceneRect(QRectF(pixmap.rect()))
         self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+        # 记录 fitInView 后的基准缩放
+        self._base_scale = self.transform().m11()
+        self.zoom_changed.emit(100)
 
     # ─── 标注框管理 ───
 
@@ -219,6 +224,12 @@ class ImageView(QGraphicsView):
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
         self.scale(factor, factor)
+        self._emit_zoom()
+
+    def _emit_zoom(self):
+        if self._base_scale > 0:
+            pct = int(round(self.transform().m11() / self._base_scale * 100))
+            self.zoom_changed.emit(pct)
 
     # ─── 鼠标交互：画框 + 拖动 ───
 
@@ -322,6 +333,8 @@ class ImageView(QGraphicsView):
             # F 键适配视口
             if self._scene.sceneRect().width() > 0:
                 self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+                self._base_scale = self.transform().m11()
+                self.zoom_changed.emit(100)
         elif key == Qt.Key_A:
             # A 上一张
             self.navigate_prev.emit()
