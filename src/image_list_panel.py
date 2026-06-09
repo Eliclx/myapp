@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PyQt5.QtCore import QThread, Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QLabel,
     QListWidget,
@@ -148,11 +148,11 @@ class ImageListPanel(QWidget):
             self.image_selected.emit(row)
 
     def _on_thumbnail_ready(self, index: int, thumb: np.ndarray):
-        """主线程：ndarray → QPixmap → 设置图标"""
+        """主线程：ndarray → QPixmap → QIcon → 设置图标"""
         item = self.list_widget.item(index)
         if item:
             pm = _ndarray_to_icon_pixmap(thumb)
-            item.setIcon(pm)
+            item.setIcon(QIcon(pm))
         self.progress.setValue(self.progress.value() + 1)
 
     def _on_all_done(self):
